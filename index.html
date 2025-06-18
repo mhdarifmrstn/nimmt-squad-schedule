@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nimmt Squad Schedule</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        /* Dark mode styles (default) */
+        .dark body {
+            background-color: #202224;
+            color: #e5e3e0;
+        }
+        .dark .card {
+            background-color: #151718;
+            color: #e5e3e0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .dark select, .dark button {
+            background-color: #3d3f42;
+            color: #e5e3e0;
+            border-color: #151718;
+        }
+        .dark select:focus, .dark button:focus {
+            border-color: #63b3ed;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+        }
+
+        /* Light mode styles */
+        body.light {
+            background-color: #f7fafc;
+            color: #2d3748;
+        }
+        .light .card {
+            background-color: #ffffff;
+            color: #2d3748;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .light select, .light button {
+            background-color: #e2e8f0;
+            color: #2d3748;
+            border-color: #cbd5e0;
+        }
+        .light select:focus, .light button:focus {
+            border-color: #63b3ed;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+        }
+
+        /* General styles */
+        select, button {
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
+            border-width: 1px;
+            border-style: solid;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="card p-6 rounded-lg shadow-xl max-w-md w-full">
+        <h1 class="text-3xl font-bold mb-6 text-center">Nimmt Squad Schedule</h1>
+
+        <!-- Timezone Selector -->
+        <div class="mb-6">
+            <label for="timezone-select" class="block text-sm font-medium mb-2">Select Timezone:</label>
+            <select id="timezone-select" class="w-full p-2 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                <!-- Timezone options will be populated by JavaScript -->
+            </select>
+        </div>
+
+        <!-- Schedule Display -->
+        <div id="schedule-display" class="space-y-4">
+            <!-- Schedule items will be populated by JavaScript -->
+        </div>
+
+        <!-- Dark/Light Mode Toggle -->
+        <div class="mt-8 text-center">
+            <button id="theme-toggle" class="px-6 py-3 rounded-full text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2">
+                Toggle Dark/Light Mode
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Define the original schedule data
+        const originalSchedule = [
+            { start: "00:30", end: "09:30", players: "10p" },
+            { start: "09:30", end: "13:00", players: "15p" },
+            { start: "13:00", end: "22:30", players: "20p" },
+            { start: "22:30", end: "00:30", players: "15p" } // This interval crosses midnight
+        ];
+
+        // Get DOM elements
+        const timezoneSelect = document.getElementById('timezone-select');
+        const scheduleDisplay = document.getElementById('schedule-display');
+        const themeToggle = document.getElementById('theme-toggle');
+        const htmlElement = document.documentElement;
+
+        // Function to populate timezone dropdown
+        function populateTimezones() {
+            // Check if Intl.supportedValuesOf is available
+            if (typeof Intl.supportedValuesOf === 'function') {
+                const timezones = Intl.supportedValuesOf('timeZone');
+                // Sort timezones alphabetically for easier navigation
+                timezones.sort().forEach(tz => {
+                    const option = document.createElement('option');
+                    option.value = tz;
+                    option.textContent = tz.replace(/_/g, ' '); // Replace underscores for better readability
+                    timezoneSelect.appendChild(option);
+                });
+            } else {
+                // Fallback for older browsers (though very unlikely to be needed)
+                console.warn("Intl.supportedValuesOf('timeZone') not supported. Timezone list might be incomplete.");
+                // Provide a small hardcoded list or instruct user to update browser
+                const fallbackTimezones = [
+                    'America/New_York', 'Europe/London', 'Asia/Tokyo', 'Asia/Jakarta', 'UTC'
+                ];
+                fallbackTimezones.forEach(tz => {
+                    const option = document.createElement('option');
+                    option.value = tz;
+                    option.textContent = tz.replace(/_/g, ' ');
+                    timezoneSelect.appendChild(option);
+                });
+            }
+
+            // Set default selected timezone to Asia/Jakarta or the browser's current timezone if Asia/Jakarta is not found
+            let defaultTZ = 'Asia/Jakarta';
+            if (!Array.from(timezoneSelect.options).some(option => option.value === defaultTZ)) {
+                defaultTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            }
+            timezoneSelect.value = defaultTZ;
+        }
+
+        // Function to convert and display schedule
+        function displaySchedule(targetTimeZone) {
+            scheduleDisplay.innerHTML = ''; // Clear previous schedule
+
+            // Get a reference date to base our time calculations on.
+            // Using a fixed date helps ensure consistency, but we'll manipulate its time.
+            const now = new Date(); // Use current date for "today" context
+            let currentYear = now.getFullYear();
+            let currentMonth = now.getMonth();
+            let currentDay = now.getDate();
+
+            originalSchedule.forEach((item, index) => {
+                // Parse start and end times
+                const [startHour, startMinute] = item.start.split(':').map(Number);
+                const [endHour, endMinute] = item.end.split(':').map(Number);
+
+                // Create Date objects for the start and end times, initially on "today" in local browser timezone
+                let startDate = new Date(currentYear, currentMonth, currentDay, startHour, startMinute, 0, 0);
+                let endDate = new Date(currentYear, currentMonth, currentDay, endHour, endMinute, 0, 0);
+
+                // Handle intervals that cross midnight (e.g., 22:30 - 00:30)
+                // If end time is numerically less than start time, it means it's on the next day
+                if (endDate.getTime() <= startDate.getTime() && item.start !== item.end) {
+                    endDate.setDate(endDate.getDate() + 1); // Add one day to the end date
+                }
+
+                // Format times to the target timezone
+                const timeOptions = {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hourCycle: 'h23', // Ensure 24-hour format
+                    timeZone: targetTimeZone,
+                };
+
+                const formattedStartTime = new Intl.DateTimeFormat('en-US', timeOptions).format(startDate);
+                const formattedEndTime = new Intl.DateTimeFormat('en-US', timeOptions).format(endDate);
+
+                // Determine if the start/end times span across two different calendar days in the target timezone
+                const dayOptions = {
+                    day: 'numeric',
+                    month: 'short',
+                    timeZone: targetTimeZone,
+                };
+                const formattedStartDay = new Intl.DateTimeFormat('en-US', dayOptions).format(startDate);
+                const formattedEndDay = new Intl.DateTimeFormat('en-US', dayOptions).format(endDate);
+
+                let daySuffix = '';
+                if (formattedStartDay !== formattedEndDay) {
+                    daySuffix = ` (${formattedEndDay})`; // Indicate if the end time is on a different day
+                }
+
+                const scheduleItemDiv = document.createElement('div');
+                scheduleItemDiv.className = 'p-3 rounded-md border border-gray-300 dark:border-gray-600'; // Add border and padding
+                scheduleItemDiv.innerHTML = `
+                    <p class="text-lg font-semibold">${formattedStartTime} - ${formattedEndTime}${daySuffix}</p>
+                    <p class="text-sm">Players: ${item.players}</p>
+                `;
+                scheduleDisplay.appendChild(scheduleItemDiv);
+            });
+        }
+
+        // Function to toggle dark/light mode
+        function toggleTheme() {
+            if (htmlElement.classList.contains('dark')) {
+                htmlElement.classList.remove('dark');
+                htmlElement.classList.add('light');
+                localStorage.setItem('theme', 'light');
+            } else {
+                htmlElement.classList.remove('light');
+                htmlElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // Initialize theme based on localStorage or default to dark
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                htmlElement.classList.add(savedTheme);
+            } else {
+                // Default to dark mode if no preference is saved
+                htmlElement.classList.add('dark');
+            }
+        }
+
+        // Event Listeners
+        timezoneSelect.addEventListener('change', (event) => {
+            displaySchedule(event.target.value);
+        });
+
+        themeToggle.addEventListener('click', toggleTheme);
+
+        // Initial setup calls
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeTheme();
+            populateTimezones();
+            // Display initial schedule based on the default selected timezone
+            displaySchedule(timezoneSelect.value);
+        });
+    </script>
+</body>
+</html>
