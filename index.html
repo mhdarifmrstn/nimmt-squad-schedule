@@ -84,7 +84,7 @@
     </div>
 
     <script>
-        // Define the original schedule data
+        // Define the original schedule data (in Asia/Jakarta timezone, which is the source)
         const originalSchedule = [
             { start: "00:30", end: "09:30", players: "10p" },
             { start: "09:30", end: "13:00", players: "15p" },
@@ -111,9 +111,8 @@
                     timezoneSelect.appendChild(option);
                 });
             } else {
-                // Fallback for older browsers (though very unlikely to be needed)
+                // Fallback for older browsers
                 console.warn("Intl.supportedValuesOf('timeZone') not supported. Timezone list might be incomplete.");
-                // Provide a small hardcoded list or instruct user to update browser
                 const fallbackTimezones = [
                     'America/New_York', 'Europe/London', 'Asia/Tokyo', 'Asia/Jakarta', 'UTC'
                 ];
@@ -125,12 +124,14 @@
                 });
             }
 
-            // Set default selected timezone to Asia/Jakarta or the browser's current timezone if Asia/Jakarta is not found
-            let defaultTZ = 'Asia/Jakarta';
-            if (!Array.from(timezoneSelect.options).some(option => option.value === defaultTZ)) {
-                defaultTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            // Set default selected timezone to the user's current local timezone
+            const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (Array.from(timezoneSelect.options).some(option => option.value === userTimeZone)) {
+                timezoneSelect.value = userTimeZone;
+            } else {
+                // Fallback if the user's timezone is not found in the list (should be rare)
+                timezoneSelect.value = 'UTC';
             }
-            timezoneSelect.value = defaultTZ;
         }
 
         // Function to convert and display schedule
@@ -138,25 +139,32 @@
             scheduleDisplay.innerHTML = ''; // Clear previous schedule
 
             // Get a reference date to base our time calculations on.
-            // Using a fixed date helps ensure consistency, but we'll manipulate its time.
             const now = new Date(); // Use current date for "today" context
             let currentYear = now.getFullYear();
             let currentMonth = now.getMonth();
             let currentDay = now.getDate();
 
             originalSchedule.forEach((item, index) => {
-                // Parse start and end times
+                // Parse start and end times from the item (FIXED: These were missing)
                 const [startHour, startMinute] = item.start.split(':').map(Number);
                 const [endHour, endMinute] = item.end.split(':').map(Number);
 
-                // Create Date objects for the start and end times, initially on "today" in local browser timezone
-                let startDate = new Date(currentYear, currentMonth, currentDay, startHour, startMinute, 0, 0);
-                let endDate = new Date(currentYear, currentMonth, currentDay, endHour, endMinute, 0, 0);
+                const sourceTimeZone = 'Asia/Jakarta';
+
+                // Get current date, then adjust it to represent the start of the day in Asia/Jakarta
+                const todayInJakarta = new Date(new Date().toLocaleString("en-US", {timeZone: sourceTimeZone}));
+                todayInJakarta.setHours(0,0,0,0); // Reset to start of day in Jakarta's timezone
+
+                let adjustedStartDate = new Date(todayInJakarta);
+                adjustedStartDate.setHours(startHour, startMinute, 0, 0);
+
+                let adjustedEndDate = new Date(todayInJakarta);
+                adjustedEndDate.setHours(endHour, endMinute, 0, 0);
 
                 // Handle intervals that cross midnight (e.g., 22:30 - 00:30)
                 // If end time is numerically less than start time, it means it's on the next day
-                if (endDate.getTime() <= startDate.getTime() && item.start !== item.end) {
-                    endDate.setDate(endDate.getDate() + 1); // Add one day to the end date
+                if (adjustedEndDate.getTime() <= adjustedStartDate.getTime() && item.start !== item.end) {
+                    adjustedEndDate.setDate(adjustedEndDate.getDate() + 1); // Add one day
                 }
 
                 // Format times to the target timezone
@@ -167,8 +175,8 @@
                     timeZone: targetTimeZone,
                 };
 
-                const formattedStartTime = new Intl.DateTimeFormat('en-US', timeOptions).format(startDate);
-                const formattedEndTime = new Intl.DateTimeFormat('en-US', timeOptions).format(endDate);
+                const formattedStartTime = new Intl.DateTimeFormat('en-US', timeOptions).format(adjustedStartDate);
+                const formattedEndTime = new Intl.DateTimeFormat('en-US', timeOptions).format(adjustedEndDate);
 
                 // Determine if the start/end times span across two different calendar days in the target timezone
                 const dayOptions = {
@@ -176,10 +184,11 @@
                     month: 'short',
                     timeZone: targetTimeZone,
                 };
-                const formattedStartDay = new Intl.DateTimeFormat('en-US', dayOptions).format(startDate);
-                const formattedEndDay = new Intl.DateTimeFormat('en-US', dayOptions).format(endDate);
+                const formattedStartDay = new Intl.DateTimeFormat('en-US', dayOptions).format(adjustedStartDate);
+                const formattedEndDay = new Intl.DateTimeFormat('en-US', dayOptions).format(adjustedEndDate);
 
                 let daySuffix = '';
+                // Only add day suffix if the days are different
                 if (formattedStartDay !== formattedEndDay) {
                     daySuffix = ` (${formattedEndDay})`; // Indicate if the end time is on a different day
                 }
@@ -229,9 +238,10 @@
         document.addEventListener('DOMContentLoaded', () => {
             initializeTheme();
             populateTimezones();
-            // Display initial schedule based on the default selected timezone
+            // Display initial schedule based on the default selected timezone (which is now the user's local time)
             displaySchedule(timezoneSelect.value);
         });
     </script>
 </body>
 </html>
+
