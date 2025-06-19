@@ -84,7 +84,7 @@
     </div>
 
     <script>
-        // Define the original schedule data (in Asia/Jakarta timezone, which is the source)
+        // Define the original schedule data (these times are implicitly in Asia/Jakarta timezone)
         const originalSchedule = [
             { start: "00:30", end: "09:30", players: "10p" },
             { start: "09:30", end: "13:00", players: "15p" },
@@ -97,6 +97,9 @@
         const scheduleDisplay = document.getElementById('schedule-display');
         const themeToggle = document.getElementById('theme-toggle');
         const htmlElement = document.documentElement;
+
+        // For simplicity, assuming Asia/Jakarta is consistently UTC+7 and does not observe DST.
+        const JAKARTA_UTC_OFFSET_MINUTES = 7 * 60; // UTC+7
 
         // Function to populate timezone dropdown
         function populateTimezones() {
@@ -138,36 +141,36 @@
         function displaySchedule(targetTimeZone) {
             scheduleDisplay.innerHTML = ''; // Clear previous schedule
 
-            // Get a reference date to base our time calculations on.
-            const now = new Date(); // Use current date for "today" context
-            let currentYear = now.getFullYear();
-            let currentMonth = now.getMonth();
-            let currentDay = now.getDate();
+            // Get current date's UTC components to apply to the schedule times
+            const now = new Date();
+            const utcYear = now.getUTCFullYear();
+            const utcMonth = now.getUTCMonth();
+            const utcDay = now.getUTCDate();
 
-            originalSchedule.forEach((item, index) => {
-                // Parse start and end times from the item (FIXED: These were missing)
+            originalSchedule.forEach((item) => {
                 const [startHour, startMinute] = item.start.split(':').map(Number);
                 const [endHour, endMinute] = item.end.split(':').map(Number);
 
-                const sourceTimeZone = 'Asia/Jakarta';
+                // Create Date objects in UTC based on the original schedule's hours/minutes.
+                // Then, adjust these UTC times by subtracting Jakarta's offset
+                // to correctly represent the *actual UTC moment* of the Jakarta time.
+                let startUtc = new Date(Date.UTC(utcYear, utcMonth, utcDay, startHour, startMinute));
+                let endUtc = new Date(Date.UTC(utcYear, utcMonth, utcDay, endHour, endMinute));
 
-                // Get current date, then adjust it to represent the start of the day in Asia/Jakarta
-                const todayInJakarta = new Date(new Date().toLocaleString("en-US", {timeZone: sourceTimeZone}));
-                todayInJakarta.setHours(0,0,0,0); // Reset to start of day in Jakarta's timezone
+                // Adjust these UTC times to reflect that the original schedule hours/minutes are *in Asia/Jakarta*.
+                // If Asia/Jakarta is UTC+7, then an event at 00:30 Jakarta actually happens at (00:30 - 7 hours) UTC.
+                startUtc.setUTCMinutes(startUtc.getUTCMinutes() - JAKARTA_UTC_OFFSET_MINUTES);
+                endUtc.setUTCMinutes(endUtc.getUTCMinutes() - JAKARTA_UTC_OFFSET_MINUTES);
 
-                let adjustedStartDate = new Date(todayInJakarta);
-                adjustedStartDate.setHours(startHour, startMinute, 0, 0);
-
-                let adjustedEndDate = new Date(todayInJakarta);
-                adjustedEndDate.setHours(endHour, endMinute, 0, 0);
-
-                // Handle intervals that cross midnight (e.g., 22:30 - 00:30)
-                // If end time is numerically less than start time, it means it's on the next day
-                if (adjustedEndDate.getTime() <= adjustedStartDate.getTime() && item.start !== item.end) {
-                    adjustedEndDate.setDate(adjustedEndDate.getDate() + 1); // Add one day
+                // Handle cross-midnight for original Jakarta times.
+                // If the end time (after UTC adjustment) is chronologically before the start time,
+                // it means the event spans into the next day in UTC.
+                if (endUtc.getTime() <= startUtc.getTime()) {
+                    endUtc.setUTCDate(endUtc.getUTCDate() + 1);
                 }
 
-                // Format times to the target timezone
+                // Now, `startUtc` and `endUtc` correctly represent the precise UTC moments of the schedule.
+                // Format these UTC Date objects to the target timezone.
                 const timeOptions = {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -175,8 +178,8 @@
                     timeZone: targetTimeZone,
                 };
 
-                const formattedStartTime = new Intl.DateTimeFormat('en-US', timeOptions).format(adjustedStartDate);
-                const formattedEndTime = new Intl.DateTimeFormat('en-US', timeOptions).format(adjustedEndDate);
+                const formattedStartTime = new Intl.DateTimeFormat('en-US', timeOptions).format(startUtc);
+                const formattedEndTime = new Intl.DateTimeFormat('en-US', timeOptions).format(endUtc);
 
                 // Determine if the start/end times span across two different calendar days in the target timezone
                 const dayOptions = {
@@ -184,8 +187,8 @@
                     month: 'short',
                     timeZone: targetTimeZone,
                 };
-                const formattedStartDay = new Intl.DateTimeFormat('en-US', dayOptions).format(adjustedStartDate);
-                const formattedEndDay = new Intl.DateTimeFormat('en-US', dayOptions).format(adjustedEndDate);
+                const formattedStartDay = new Intl.DateTimeFormat('en-US', dayOptions).format(startUtc);
+                const formattedEndDay = new Intl.DateTimeFormat('en-US', dayOptions).format(endUtc);
 
                 let daySuffix = '';
                 // Only add day suffix if the days are different
